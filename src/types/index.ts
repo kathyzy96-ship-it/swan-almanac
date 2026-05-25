@@ -25,6 +25,7 @@ export interface PracticeComment {
   relativeTime: string
   body: string
   avatarTone: string
+  createdAt?: string
 }
 
 export interface CheckInLog {

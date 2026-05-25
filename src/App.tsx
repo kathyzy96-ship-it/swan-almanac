@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
+import type { User } from '@supabase/supabase-js'
 import { CheckCircle2, Inbox, Leaf, LockKeyhole, Sparkles, X } from 'lucide-react'
 import { AchievementStudio } from './components/AchievementStudio'
 import { ActiveGallery } from './components/ActiveGallery'
 import { PendingPool } from './components/PendingPool'
 import { mergeDefaultComments, mergeSeedPractices } from './data/seed'
-import type { BodyProfile, CategoryFilter, CheckInLog, PendingLink, Practice, PracticeComment } from './types'
+import type { AppData, BodyProfile, CategoryFilter, CheckInLog, PendingLink, Practice, PracticeComment } from './types'
 import {
   computeStreak,
   computeTotalCheckIns,
@@ -17,6 +18,19 @@ import {
   savePendingLinks,
   savePractices,
 } from './lib/storage'
+import {
+  deletePracticeFromCloud,
+  getCurrentUser,
+  loadCloudData,
+  signInAnonymouslyOrDemo,
+  signInOrSignUp,
+  signOutFromSupabase,
+  syncLocalDataToCloud,
+  upsertBodyProfile,
+  upsertCheckInLog,
+  upsertComment,
+  upsertPractice,
+} from './lib/supabaseSync'
 
 function todayKey(): string {
   return new Date().toISOString().slice(0, 10)
@@ -31,29 +45,90 @@ export default function App() {
   const [bodyProfile, setBodyProfile] = useState<BodyProfile>({})
   const [statAnimKey, setStatAnimKey] = useState(0)
   const [activeFilter, setActiveFilter] = useState<CategoryFilter>('all')
-  const [isLoggedIn, setIsLoggedIn] = useState(false)
-  const [showLoginPrompt, setShowLoginPrompt] = useState(false)
+  const [user, setUser] = useState<User | null>(null)
+  const [showAuthModal, setShowAuthModal] = useState(false)
+  const [authEmail, setAuthEmail] = useState('demo@swan-almanac.local')
+  const [authPassword, setAuthPassword] = useState('PrimaSwan2026!')
+  const [authError, setAuthError] = useState<string | null>(null)
+  const [isAuthLoading, setIsAuthLoading] = useState(false)
+  const [syncStatus, setSyncStatus] = useState<'local' | 'syncing' | 'cloud'>('local')
   const [isPendingDrawerOpen, setIsPendingDrawerOpen] = useState(false)
 
   useEffect(() => {
-    const data = loadAppData()
+    const boot = async () => {
+      const localData = loadAppData()
+      const preparedLocalData = applyAndPersistData(localData)
+
+      try {
+        const currentUser = await getCurrentUser()
+        if (!currentUser) return
+
+        setUser(currentUser)
+        await syncUserData(currentUser, preparedLocalData)
+      } catch (error) {
+        setAuthError(error instanceof Error ? error.message : '云端同步暂时不可用，已继续使用本地数据。')
+      }
+    }
+
+    void boot()
+  }, [])
+
+  function applyAndPersistData(data: AppData): AppData {
     const seededPractices = mergeSeedPractices(data.practices, data.deletedPracticeIds)
     const seededComments = mergeDefaultComments(data.comments, seededPractices)
     const seededPracticeIds = new Set(seededPractices.map((practice) => practice.id))
     const syncedCheckInLogs = data.checkInLogs.filter((log) => seededPracticeIds.has(log.practiceId))
-    setPendingLinks(data.pendingLinks)
-    setPractices(seededPractices)
-    setComments(seededComments)
-    setCheckInLogs(syncedCheckInLogs)
-    setDeletedPracticeIds(data.deletedPracticeIds)
-    setBodyProfile(data.bodyProfile)
-    savePractices(seededPractices)
-    saveComments(seededComments)
-    saveCheckInLogs(syncedCheckInLogs)
-  }, [])
+    const nextData = {
+      ...data,
+      practices: seededPractices,
+      comments: seededComments,
+      checkInLogs: syncedCheckInLogs,
+    }
+
+    setPendingLinks(nextData.pendingLinks)
+    setPractices(nextData.practices)
+    setComments(nextData.comments)
+    setCheckInLogs(nextData.checkInLogs)
+    setDeletedPracticeIds(nextData.deletedPracticeIds)
+    setBodyProfile(nextData.bodyProfile)
+    savePractices(nextData.practices)
+    saveComments(nextData.comments)
+    saveCheckInLogs(nextData.checkInLogs)
+    saveBodyProfile(nextData.bodyProfile)
+    return nextData
+  }
+
+  function currentAppData(): AppData {
+    return {
+      pendingLinks,
+      practices,
+      comments,
+      checkInLogs,
+      deletedPracticeIds,
+      bodyProfile,
+    }
+  }
+
+  async function syncUserData(currentUser: User, localData = currentAppData()): Promise<void> {
+    setSyncStatus('syncing')
+    await syncLocalDataToCloud(currentUser.id, localData)
+    const cloudData = await loadCloudData(currentUser.id)
+    applyAndPersistData({
+      ...localData,
+      practices: cloudData.practices.length > 0 ? cloudData.practices : localData.practices,
+      comments: { ...localData.comments, ...cloudData.comments },
+      checkInLogs: cloudData.checkInLogs.length > 0 ? cloudData.checkInLogs : localData.checkInLogs,
+      bodyProfile:
+        cloudData.bodyProfile.beforeImage || cloudData.bodyProfile.afterImage
+          ? cloudData.bodyProfile
+          : localData.bodyProfile,
+    })
+    setSyncStatus('cloud')
+  }
 
   const totalCheckIns = useMemo(() => computeTotalCheckIns(checkInLogs), [checkInLogs])
   const streak = useMemo(() => computeStreak(checkInLogs), [checkInLogs])
+  const isLoggedIn = Boolean(user)
   const filteredPractices = useMemo(
     () =>
       activeFilter === 'all'
@@ -75,12 +150,7 @@ export default function App() {
     savePendingLinks(next)
   }
 
-  const processPractice = (practice: Practice, pendingId: string) => {
-    if (!isLoggedIn) {
-      setShowLoginPrompt(true)
-      return
-    }
-
+  const processPractice = async (practice: Practice, pendingId: string) => {
     const nextPractices = [practice, ...practices]
     const nextPending = pendingLinks.filter((link) => link.id !== pendingId)
     const nextComments = {
@@ -93,53 +163,91 @@ export default function App() {
     savePractices(nextPractices)
     savePendingLinks(nextPending)
     saveComments(nextComments)
+
+    if (user) {
+      try {
+        await upsertPractice(user.id, practice)
+        await syncLocalDataToCloud(user.id, {
+          ...currentAppData(),
+          practices: nextPractices,
+          pendingLinks: nextPending,
+          comments: nextComments,
+        })
+        setSyncStatus('cloud')
+      } catch (error) {
+        setSyncStatus('local')
+        setAuthError(error instanceof Error ? error.message : '动作已保存在本地，云端同步失败。')
+      }
+    }
   }
 
-  const checkIn = (practiceId: string) => {
+  const checkIn = async (practiceId: string) => {
+    const newLog = {
+      id: generateId(),
+      practiceId,
+      date: todayKey(),
+      timestamp: new Date().toISOString(),
+    }
     const nextPractices = practices.map((practice) =>
       practice.id === practiceId
         ? { ...practice, checkInCount: practice.checkInCount + 1 }
         : practice,
     )
-    const nextLogs = [
-      ...checkInLogs,
-      {
-        id: generateId(),
-        practiceId,
-        date: todayKey(),
-        timestamp: new Date().toISOString(),
-      },
-    ]
+    const nextLogs = [...checkInLogs, newLog]
     setPractices(nextPractices)
     setCheckInLogs(nextLogs)
     setStatAnimKey((key) => key + 1)
     savePractices(nextPractices)
     saveCheckInLogs(nextLogs)
+
+    if (user) {
+      try {
+        const updatedPractice = nextPractices.find((practice) => practice.id === practiceId)
+        if (updatedPractice) await upsertPractice(user.id, updatedPractice)
+        await upsertCheckInLog(user.id, newLog)
+        setSyncStatus('cloud')
+      } catch (error) {
+        setSyncStatus('local')
+        setAuthError(error instanceof Error ? error.message : '练习记录已保存在本地，云端同步失败。')
+      }
+    }
   }
 
-  const addComment = (practiceId: string, body: string) => {
+  const addComment = async (practiceId: string, body: string) => {
     const trimmed = body.trim()
     if (!trimmed) return
+    const newComment = {
+      id: generateId(),
+      practiceId,
+      userName: user?.email ?? '当前用户',
+      relativeTime: '刚刚',
+      body: trimmed,
+      avatarTone: 'from-[#DDFBEA] to-[#E2EDF8]',
+      createdAt: new Date().toISOString(),
+    }
 
     const nextComments = {
       ...comments,
       [practiceId]: [
         ...(comments[practiceId] ?? []),
-        {
-          id: generateId(),
-          practiceId,
-          userName: isLoggedIn ? '当前用户' : '当前用户',
-          relativeTime: '刚刚',
-          body: trimmed,
-          avatarTone: 'from-[#DDFBEA] to-[#E2EDF8]',
-        },
+        newComment,
       ],
     }
     setComments(nextComments)
     saveComments(nextComments)
+
+    if (user) {
+      try {
+        await upsertComment(user.id, newComment)
+        setSyncStatus('cloud')
+      } catch (error) {
+        setSyncStatus('local')
+        setAuthError(error instanceof Error ? error.message : '日记已保存在本地，云端同步失败。')
+      }
+    }
   }
 
-  const deletePractice = (practiceId: string) => {
+  const deletePractice = async (practiceId: string) => {
     const nextPractices = practices.filter((practice) => practice.id !== practiceId)
     const nextLogs = checkInLogs.filter((log) => log.practiceId !== practiceId)
     const nextComments = { ...comments }
@@ -154,23 +262,95 @@ export default function App() {
     saveCheckInLogs(nextLogs)
     saveComments(nextComments)
     saveDeletedPracticeIds(nextDeletedIds)
+
+    if (user) {
+      try {
+        await deletePracticeFromCloud(user.id, practiceId)
+        setSyncStatus('cloud')
+      } catch (error) {
+        setSyncStatus('local')
+        setAuthError(error instanceof Error ? error.message : '本地已删除，云端删除失败。')
+      }
+    }
   }
 
-  const updateBodyProfile = (profile: BodyProfile) => {
+  const updateBodyProfile = async (profile: BodyProfile) => {
     setBodyProfile(profile)
     saveBodyProfile(profile)
+
+    if (user) {
+      try {
+        await upsertBodyProfile(user.id, profile)
+        setSyncStatus('cloud')
+      } catch (error) {
+        setSyncStatus('local')
+        setAuthError(error instanceof Error ? error.message : '体态照片已保存在本地，云端同步失败。')
+      }
+    }
+  }
+
+  const handleEmailAuth = async () => {
+    setIsAuthLoading(true)
+    setAuthError(null)
+    try {
+      const authUser = await signInOrSignUp(authEmail, authPassword)
+      setUser(authUser)
+      await syncUserData(authUser)
+      setShowAuthModal(false)
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : '登录失败，请稍后再试。')
+    } finally {
+      setIsAuthLoading(false)
+    }
+  }
+
+  const handleDemoAuth = async () => {
+    setIsAuthLoading(true)
+    setAuthError(null)
+    try {
+      const authUser = await signInAnonymouslyOrDemo()
+      setUser(authUser)
+      await syncUserData(authUser)
+      setShowAuthModal(false)
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : '体验账号登录失败，请检查 Supabase Auth 设置。')
+    } finally {
+      setIsAuthLoading(false)
+    }
+  }
+
+  const handleAuthButtonClick = async () => {
+    if (!user) {
+      setShowAuthModal(true)
+      return
+    }
+
+    try {
+      await signOutFromSupabase()
+      setUser(null)
+      setSyncStatus('local')
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : '退出登录失败。')
+    }
   }
 
   return (
     <main className="min-h-screen bg-[#FBF9F6] text-[#1A1A1A]">
       <header className="relative rounded-b-[40px] bg-gradient-to-b from-[#E2EDF8] via-[#F5F8FC] to-[#FBF9F6] px-8 py-16">
-        <button
-          type="button"
-          onClick={() => setIsLoggedIn((value) => !value)}
-          className="absolute right-8 top-7 text-sm font-bold text-[#1A1A1A]/45 transition-colors hover:text-[#1A1A1A]"
-        >
-          {isLoggedIn ? 'Logged In' : 'Login / Register'}
-        </button>
+        <div className="absolute right-8 top-7 flex items-center gap-3">
+          {user && (
+            <span className="rounded-full bg-white/70 px-3 py-1 text-[11px] font-black uppercase tracking-[0.16em] text-[#1A1A1A]/40">
+              {syncStatus === 'syncing' ? 'Syncing' : syncStatus === 'cloud' ? 'Cloud' : 'Local'}
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={handleAuthButtonClick}
+            className="text-sm font-bold text-[#1A1A1A]/45 transition-colors hover:text-[#1A1A1A]"
+          >
+            {user ? 'Logout' : 'Login / Register'}
+          </button>
+        </div>
         <div className="mx-auto grid max-w-[1500px] items-center gap-12 lg:grid-cols-[1fr_0.9fr]">
           <div className="max-w-3xl">
             <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-white/70 bg-white/70 px-4 py-2 text-xs font-black uppercase tracking-[0.2em] text-[#35688F] shadow-sm backdrop-blur">
@@ -261,12 +441,12 @@ export default function App() {
           </p>
         </div>
       </footer>
-      {showLoginPrompt && (
+      {showAuthModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#1A1A1A]/25 px-5 backdrop-blur-sm">
           <div className="relative w-full max-w-md rounded-[32px] border border-white/70 bg-white/85 p-7 shadow-[0_30px_90px_rgba(26,26,26,0.18)] backdrop-blur-xl">
             <button
               type="button"
-              onClick={() => setShowLoginPrompt(false)}
+              onClick={() => setShowAuthModal(false)}
               className="absolute right-5 top-5 rounded-full bg-white/80 p-2 text-[#1A1A1A]/55 transition-colors hover:text-[#1A1A1A]"
               aria-label="关闭登录提示"
             >
@@ -279,17 +459,44 @@ export default function App() {
               开启云端天鹅练习图文库
             </h2>
             <p className="mt-3 text-sm leading-relaxed text-[#1A1A1A]/60">
-              登录后即可开启云端天鹅练习图文库，数据永不丢失 ↗
+              登录后自动上传本地练习、优雅记录与体态照片，并在电脑和手机间保持同步。
             </p>
+            <div className="mt-6 space-y-3">
+              <input
+                type="email"
+                value={authEmail}
+                onChange={(event) => setAuthEmail(event.target.value)}
+                placeholder="Email"
+                className="w-full rounded-full border border-[#EAE5DF]/70 bg-white/80 px-5 py-3 text-sm outline-none transition-colors focus:border-[#F7B7C8]"
+              />
+              <input
+                type="password"
+                value={authPassword}
+                onChange={(event) => setAuthPassword(event.target.value)}
+                placeholder="Password"
+                className="w-full rounded-full border border-[#EAE5DF]/70 bg-white/80 px-5 py-3 text-sm outline-none transition-colors focus:border-[#F7B7C8]"
+              />
+            </div>
+            {authError && (
+              <p className="mt-4 rounded-2xl bg-[#FFF0EB] px-4 py-3 text-xs font-bold leading-relaxed text-[#D95745]">
+                {authError}
+              </p>
+            )}
             <button
               type="button"
-              onClick={() => {
-                setIsLoggedIn(true)
-                setShowLoginPrompt(false)
-              }}
+              onClick={handleEmailAuth}
+              disabled={isAuthLoading}
               className="mt-7 w-full rounded-full bg-gradient-to-r from-[#FF4E50] to-[#F9D423] py-3.5 text-sm font-bold text-white shadow-[0_18px_45px_rgba(255,78,80,0.24),inset_0_1px_0_rgba(255,255,255,0.35)] transition-all hover:scale-[1.02] hover:from-[#F7B7C8] hover:to-[#F8D7A5] active:scale-[0.98]"
             >
-              登录 / 注册
+              {isAuthLoading ? '正在同步云端...' : '邮箱登录 / 注册'}
+            </button>
+            <button
+              type="button"
+              onClick={handleDemoAuth}
+              disabled={isAuthLoading}
+              className="mt-3 w-full rounded-full bg-[#1A1A1A] py-3 text-sm font-bold text-white transition-all hover:scale-[1.02] active:scale-[0.98]"
+            >
+              匿名体验账号登录
             </button>
           </div>
         </div>
@@ -325,12 +532,9 @@ export default function App() {
               onQuickSave={addPendingLink}
               onProcess={(practice, pendingId) => {
                 processPractice(practice, pendingId)
-                if (isLoggedIn) {
-                  setIsPendingDrawerOpen(false)
-                }
+                setIsPendingDrawerOpen(false)
               }}
               isLoggedIn={isLoggedIn}
-              onRequireLogin={() => setShowLoginPrompt(true)}
             />
           </aside>
         </div>

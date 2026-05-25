@@ -9,8 +9,8 @@ interface PendingPoolProps {
   pendingLinks: PendingLink[]
   onQuickSave: (url: string) => void
   onProcess: (practice: Practice, pendingId: string) => void
-  isLoggedIn: boolean
-  onRequireLogin: () => void
+  isLoggedIn?: boolean
+  onRequireLogin?: () => void
 }
 
 const ALL_SYMPTOMS: Symptom[] = ['rounded-shoulders', 'hunchback', 'forward-head']
@@ -32,8 +32,6 @@ export function PendingPool({
   pendingLinks,
   onQuickSave,
   onProcess,
-  isLoggedIn,
-  onRequireLogin,
 }: PendingPoolProps) {
   const [urlInput, setUrlInput] = useState('')
   const [expandedId, setExpandedId] = useState<string | null>(null)
@@ -80,11 +78,6 @@ export function PendingPool({
   }
 
   const handleSave = (pending: PendingLink) => {
-    if (!isLoggedIn) {
-      onRequireLogin()
-      return
-    }
-
     const form = forms[pending.id] ?? emptyForm()
     if (!form.name.trim() || form.symptoms.length === 0 || form.steps.some((s) => !s.trim())) {
       return
