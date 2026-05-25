@@ -425,7 +425,7 @@ export default function App() {
 
   return (
     <main className="min-h-screen bg-[#FBF9F6] text-[#1A1A1A]">
-      <header className="relative rounded-b-[32px] bg-gradient-to-b from-[#E2EDF8] via-[#F5F8FC] to-[#FBF9F6] px-5 pb-8 pt-14 md:rounded-b-[40px] md:px-8 md:py-16">
+      <header className="relative rounded-b-[32px] bg-gradient-to-b from-[#E2EDF8] via-[#F5F8FC] to-[#FBF9F6] pb-8 pt-14 md:rounded-b-[40px] md:py-16">
         <div className="absolute right-5 top-5 flex items-center gap-3 md:right-8 md:top-7">
           {user && (
             <span className="rounded-full bg-white/70 px-3 py-1 text-[11px] font-black uppercase tracking-[0.16em] text-[#1A1A1A]/40">
@@ -440,7 +440,7 @@ export default function App() {
             {user ? 'Logout' : 'Login / Register'}
           </button>
         </div>
-        <div className="mx-auto max-w-4xl text-center">
+        <div className="mx-auto w-full max-w-md px-4 text-center md:max-w-6xl">
           <div>
             <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-white/70 bg-white/70 px-4 py-2 text-[10px] font-black uppercase tracking-[0.2em] text-[#35688F] shadow-sm backdrop-blur md:mb-5 md:text-xs">
                 <Leaf className="h-3.5 w-3.5" strokeWidth={1.5} />
@@ -463,7 +463,7 @@ export default function App() {
         </div>
       </header>
 
-      <div className="mx-auto max-w-[1500px] px-4 py-5 md:px-8 md:py-10 lg:px-10">
+      <div className="mx-auto w-full max-w-md px-4 py-5 md:max-w-6xl md:py-10">
         <div id="workspace" className="grid gap-6 xl:grid-cols-[2fr_1fr]">
           <div className="rounded-[28px] border border-[#EAE5DF]/50 bg-white p-4 shadow-sm md:rounded-[32px] md:p-8">
             <ActiveGallery
@@ -492,7 +492,7 @@ export default function App() {
           </div>
         </div>
       </div>
-      <section className="mx-auto max-w-[1500px] px-4 pb-8 md:px-8 lg:px-10">
+      <section className="mx-auto w-full max-w-md px-4 pb-8 md:max-w-6xl">
         <div className="rounded-[32px] border border-[#EAE5DF]/50 bg-white/75 p-4 shadow-sm backdrop-blur md:p-6">
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div>
@@ -527,8 +527,8 @@ export default function App() {
           </div>
         </div>
       </section>
-      <footer className="mt-10 rounded-t-[40px] bg-[#1A1A1A] px-8 py-10 text-white md:px-12">
-        <div className="mx-auto flex max-w-[1500px] flex-col gap-4 md:flex-row md:items-end md:justify-between">
+      <footer className="mt-10 rounded-t-[40px] bg-[#1A1A1A] py-10 text-white">
+        <div className="mx-auto flex w-full max-w-md flex-col gap-4 px-4 md:max-w-6xl md:flex-row md:items-end md:justify-between">
           <div>
             <div className="mb-3 inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-black uppercase tracking-[0.2em] text-white/60">
               <Sparkles className="h-3.5 w-3.5 text-[#F9D423]" />
