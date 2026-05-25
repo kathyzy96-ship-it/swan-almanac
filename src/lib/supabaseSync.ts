@@ -47,6 +47,26 @@ export async function getCurrentUser(): Promise<User | null> {
   return data.user
 }
 
+export async function signInWithEmail(email: string, password: string): Promise<User> {
+  const normalizedEmail = email.trim().toLowerCase()
+  const { data, error } = await supabase.auth.signInWithPassword({ email: normalizedEmail, password })
+
+  if (error) throw error
+  if (!data.user) throw new Error('登录失败，请检查邮箱或密码。')
+
+  return data.user
+}
+
+export async function signUpWithEmail(email: string, password: string): Promise<User> {
+  const normalizedEmail = email.trim().toLowerCase()
+  const { data, error } = await supabase.auth.signUp({ email: normalizedEmail, password })
+
+  if (error) throw error
+  if (!data.user) throw new Error('注册失败，请稍后再试。')
+
+  return data.user
+}
+
 export async function signInOrSignUp(email: string, password: string): Promise<User> {
   const normalizedEmail = email.trim().toLowerCase()
   const signInResult = await supabase.auth.signInWithPassword({ email: normalizedEmail, password })

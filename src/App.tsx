@@ -24,7 +24,8 @@ import {
   loadCloudData,
   loadPublicPractices,
   signInAnonymouslyOrDemo,
-  signInOrSignUp,
+  signInWithEmail,
+  signUpWithEmail,
   signOutFromSupabase,
   syncLocalDataToCloud,
   uploadActionImage,
@@ -55,6 +56,8 @@ export default function App() {
   const [authEmail, setAuthEmail] = useState('demo@swan-almanac.local')
   const [authPassword, setAuthPassword] = useState('PrimaSwan2026!')
   const [authError, setAuthError] = useState<string | null>(null)
+  const [authNotice, setAuthNotice] = useState<string | null>(null)
+  const [isSignUpMode, setIsSignUpMode] = useState(false)
   const [isAuthLoading, setIsAuthLoading] = useState(false)
   const [syncStatus, setSyncStatus] = useState<'local' | 'syncing' | 'cloud'>('local')
   const [isPendingDrawerOpen, setIsPendingDrawerOpen] = useState(false)
@@ -358,13 +361,25 @@ export default function App() {
   const handleEmailAuth = async () => {
     setIsAuthLoading(true)
     setAuthError(null)
+    setAuthNotice(null)
     try {
-      const authUser = await signInOrSignUp(authEmail, authPassword)
+      const authUser = isSignUpMode
+        ? await signUpWithEmail(authEmail, authPassword)
+        : await signInWithEmail(authEmail, authPassword)
       setUser(authUser)
       await syncUserData(authUser)
-      setShowAuthModal(false)
+      if (isSignUpMode) {
+        setAuthNotice('注册成功！已为您自动登录云端空间 🦢✨')
+        window.setTimeout(() => {
+          setShowAuthModal(false)
+          setAuthNotice(null)
+          setIsSignUpMode(false)
+        }, 900)
+      } else {
+        setShowAuthModal(false)
+      }
     } catch (error) {
-      setAuthError(error instanceof Error ? error.message : '登录失败，请稍后再试。')
+      setAuthError(error instanceof Error ? error.message : isSignUpMode ? '注册失败，请稍后再试。' : '登录失败，请稍后再试。')
     } finally {
       setIsAuthLoading(false)
     }
@@ -531,7 +546,11 @@ export default function App() {
           <div className="relative w-full max-w-md rounded-[32px] border border-white/70 bg-white/85 p-7 shadow-[0_30px_90px_rgba(26,26,26,0.18)] backdrop-blur-xl">
             <button
               type="button"
-              onClick={() => setShowAuthModal(false)}
+              onClick={() => {
+                setShowAuthModal(false)
+                setAuthError(null)
+                setAuthNotice(null)
+              }}
               className="absolute right-5 top-5 rounded-full bg-white/80 p-2 text-[#1A1A1A]/55 transition-colors hover:text-[#1A1A1A]"
               aria-label="关闭登录提示"
             >
@@ -541,7 +560,7 @@ export default function App() {
               <LockKeyhole className="h-6 w-6" strokeWidth={1.8} />
             </div>
             <h2 className="font-sans text-2xl font-black tracking-tight text-[#1A1A1A]">
-              开启云端天鹅练习图文库
+              {isSignUpMode ? '创建你的天鹅美学账户' : '开启云端天鹅练习图文库'}
             </h2>
             <p className="mt-3 text-sm leading-relaxed text-[#1A1A1A]/60">
               登录后自动上传本地练习、优雅记录与体态照片，并在电脑和手机间保持同步。
@@ -562,6 +581,22 @@ export default function App() {
                 className="w-full rounded-full border border-[#EAE5DF]/70 bg-white/80 px-5 py-3 text-sm outline-none transition-colors focus:border-[#F7B7C8]"
               />
             </div>
+            <button
+              type="button"
+              onClick={() => {
+                setIsSignUpMode((value) => !value)
+                setAuthError(null)
+                setAuthNotice(null)
+              }}
+              className="mt-4 text-xs font-bold text-[#1A1A1A]/45 transition-colors hover:text-[#1A1A1A]"
+            >
+              {isSignUpMode ? '已有账号？返回登录 ↗' : '没有账号？切换到注册 ↗'}
+            </button>
+            {authNotice && (
+              <p className="mt-4 rounded-2xl bg-[#DDFBEA] px-4 py-3 text-xs font-bold leading-relaxed text-[#117A4A]">
+                {authNotice}
+              </p>
+            )}
             {authError && (
               <p className="mt-4 rounded-2xl bg-[#FFF0EB] px-4 py-3 text-xs font-bold leading-relaxed text-[#D95745]">
                 {authError}
@@ -573,7 +608,7 @@ export default function App() {
               disabled={isAuthLoading}
               className="mt-7 w-full rounded-full bg-gradient-to-r from-[#FF4E50] to-[#F9D423] py-3.5 text-sm font-bold text-white shadow-[0_18px_45px_rgba(255,78,80,0.24),inset_0_1px_0_rgba(255,255,255,0.35)] transition-all hover:scale-[1.02] hover:from-[#F7B7C8] hover:to-[#F8D7A5] active:scale-[0.98]"
             >
-              {isAuthLoading ? '正在同步云端...' : '邮箱登录 / 注册'}
+              {isAuthLoading ? '正在同步云端...' : isSignUpMode ? '创建新账号并登录' : '邮箱登录'}
             </button>
             <button
               type="button"
