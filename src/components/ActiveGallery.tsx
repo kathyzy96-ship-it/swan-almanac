@@ -7,7 +7,6 @@ import { generateId } from '../lib/storage'
 
 interface ActiveGalleryProps {
   practices: Practice[]
-  allPractices: Practice[]
   comments: Record<string, PracticeComment[]>
   activeFilter: CategoryFilter
   onFilterChange: (filter: CategoryFilter) => void
@@ -18,14 +17,13 @@ interface ActiveGalleryProps {
   onGalleryScopeChange: (scope: GalleryScope) => void
   isLoggedIn: boolean
   onRequireLogin: () => void
-  onSharePractice: (practice: Practice, imageFile?: File) => void
 }
 
 const FILTER_OPTIONS: Array<{ value: CategoryFilter; label: string }> = [
-  { value: 'all', label: '全部练功房' },
-  { value: 'rounded-shoulders', label: SYMPTOM_LABELS['rounded-shoulders'] },
-  { value: 'hunchback', label: SYMPTOM_LABELS.hunchback },
-  { value: 'forward-head', label: SYMPTOM_LABELS['forward-head'] },
+  { value: 'all', label: '全部' },
+  { value: 'rounded-shoulders', label: '圆肩' },
+  { value: 'hunchback', label: '驼背' },
+  { value: 'forward-head', label: '天鹅颈' },
 ]
 
 interface PracticeCardProps {
@@ -107,7 +105,7 @@ function useMindfulTimer(onComplete: () => void) {
   return { status, remaining, start, reset }
 }
 
-function SurpriseMeCard({
+export function SurpriseMeCard({
   practices,
   onCheckIn,
 }: {
@@ -347,7 +345,7 @@ function PracticeCard({ practice, comments, onCheckIn, onAddComment, onDeletePra
   )
 }
 
-function SharePracticeModal({
+export function SharePracticeModal({
   onClose,
   onSubmit,
 }: {
@@ -514,7 +512,6 @@ function SharePracticeModal({
 
 export function ActiveGallery({
   practices,
-  allPractices,
   comments,
   activeFilter,
   onFilterChange,
@@ -525,10 +522,8 @@ export function ActiveGallery({
   onGalleryScopeChange,
   isLoggedIn,
   onRequireLogin,
-  onSharePractice,
 }: ActiveGalleryProps) {
   const filterLabel = activeFilter === 'all' ? '全部练功房' : SYMPTOM_LABELS[activeFilter]
-  const [isShareOpen, setIsShareOpen] = useState(false)
 
   const handleScopeChange = (scope: GalleryScope) => {
     if (scope === 'mine' && !isLoggedIn) {
@@ -536,14 +531,6 @@ export function ActiveGallery({
       return
     }
     onGalleryScopeChange(scope)
-  }
-
-  const handleShareClick = () => {
-    if (!isLoggedIn) {
-      onRequireLogin()
-      return
-    }
-    setIsShareOpen(true)
   }
 
   return (
@@ -556,19 +543,14 @@ export function ActiveGallery({
             当前筛选：{filterLabel}。已提炼的舒展卡片，随时练习，持续雕刻优雅体态。
           </p>
         </div>
-        <div className="flex flex-col gap-3">
-          <button
-            type="button"
-            onClick={handleShareClick}
-            className="self-start rounded-full bg-[#1A1A1A] px-5 py-2.5 text-xs font-black text-white shadow-[0_14px_35px_rgba(26,26,26,0.14)] transition-all hover:scale-[1.02] active:scale-[0.98] xl:self-end"
-          >
-            分享秘籍 ＋
-          </button>
-          <div className="inline-flex flex-wrap items-center gap-1 rounded-full border border-[#EAE5DF]/50 bg-white/80 p-1.5 shadow-sm">
-            {[
-              { value: 'community' as GalleryScope, label: '🩰 精选社区大厅' },
-              { value: 'mine' as GalleryScope, label: '🔒 我的专属练功房' },
-            ].map((option) => (
+      </header>
+
+      <div className="max-w-full overflow-x-auto rounded-[28px] border border-[#EAE5DF]/50 bg-white/80 p-1.5 shadow-sm">
+        <div className="inline-flex min-w-max items-center gap-1 whitespace-nowrap">
+          {[
+            { value: 'community' as GalleryScope, label: '🩰 精选社区大厅' },
+            { value: 'mine' as GalleryScope, label: '🔒 我的专属' },
+          ].map((option) => (
               <button
                 key={option.value}
                 type="button"
@@ -581,16 +563,12 @@ export function ActiveGallery({
               >
                 {option.label}
               </button>
-            ))}
-          </div>
-        </div>
-      </header>
-
-      <div className="inline-flex max-w-full flex-wrap items-center gap-1 rounded-full border border-[#EAE5DF]/50 bg-white/80 p-1.5 shadow-sm">
-        <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#F2F7FF] text-[#35688F] shadow-sm">
-          <SlidersHorizontal className="h-4 w-4" strokeWidth={1.7} />
-        </span>
-        {FILTER_OPTIONS.map((option) => (
+          ))}
+          <span className="mx-1 h-6 w-px bg-[#EAE5DF]" />
+          <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#F2F7FF] text-[#35688F] shadow-sm">
+            <SlidersHorizontal className="h-4 w-4" strokeWidth={1.7} />
+          </span>
+          {FILTER_OPTIONS.map((option) => (
             <button
               key={option.value}
               type="button"
@@ -603,10 +581,9 @@ export function ActiveGallery({
             >
               {option.label}
             </button>
-        ))}
+          ))}
+        </div>
       </div>
-
-      <SurpriseMeCard practices={allPractices} onCheckIn={onCheckIn} />
 
       {practices.length === 0 ? (
         <EmptyState
@@ -628,12 +605,6 @@ export function ActiveGallery({
             />
           ))}
         </div>
-      )}
-      {isShareOpen && (
-        <SharePracticeModal
-          onClose={() => setIsShareOpen(false)}
-          onSubmit={onSharePractice}
-        />
       )}
     </section>
   )

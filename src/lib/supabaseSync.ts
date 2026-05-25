@@ -99,6 +99,7 @@ export async function loadPublicPractices(): Promise<Practice[]> {
     .from('practices')
     .select('*')
     .eq('is_public', true)
+    .order('check_in_count', { ascending: false })
     .order('created_at', { ascending: false })
 
   if (error) throw error

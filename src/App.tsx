@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { User } from '@supabase/supabase-js'
-import { CheckCircle2, Inbox, Leaf, LockKeyhole, Sparkles, X } from 'lucide-react'
+import { Inbox, Leaf, LockKeyhole, Plus, Sparkles, X } from 'lucide-react'
 import { AchievementStudio } from './components/AchievementStudio'
-import { ActiveGallery } from './components/ActiveGallery'
+import { ActiveGallery, SharePracticeModal, SurpriseMeCard } from './components/ActiveGallery'
 import { PendingPool } from './components/PendingPool'
 import { mergeDefaultComments, mergeSeedPractices } from './data/seed'
 import type { AppData, BodyProfile, CategoryFilter, CheckInLog, PendingLink, Practice, PracticeComment } from './types'
@@ -58,6 +58,7 @@ export default function App() {
   const [isAuthLoading, setIsAuthLoading] = useState(false)
   const [syncStatus, setSyncStatus] = useState<'local' | 'syncing' | 'cloud'>('local')
   const [isPendingDrawerOpen, setIsPendingDrawerOpen] = useState(false)
+  const [isShareOpen, setIsShareOpen] = useState(false)
 
   useEffect(() => {
     const boot = async () => {
@@ -399,6 +400,14 @@ export default function App() {
     }
   }
 
+  const openShareStudio = () => {
+    if (!user) {
+      setShowAuthModal(true)
+      return
+    }
+    setIsShareOpen(true)
+  }
+
   return (
     <main className="min-h-screen bg-[#FBF9F6] text-[#1A1A1A]">
       <header className="relative rounded-b-[32px] bg-gradient-to-b from-[#E2EDF8] via-[#F5F8FC] to-[#FBF9F6] px-5 pb-8 pt-14 md:rounded-b-[40px] md:px-8 md:py-16">
@@ -416,8 +425,8 @@ export default function App() {
             {user ? 'Logout' : 'Login / Register'}
           </button>
         </div>
-        <div className="mx-auto grid max-w-[1500px] items-center gap-8 md:gap-12 lg:grid-cols-[1fr_0.9fr]">
-          <div className="max-w-3xl">
+        <div className="mx-auto max-w-4xl text-center">
+          <div>
             <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-white/70 bg-white/70 px-4 py-2 text-[10px] font-black uppercase tracking-[0.2em] text-[#35688F] shadow-sm backdrop-blur md:mb-5 md:text-xs">
                 <Leaf className="h-3.5 w-3.5" strokeWidth={1.5} />
                 Mindful actions for a better self
@@ -428,39 +437,12 @@ export default function App() {
             <p className="mt-3 font-sans text-xs font-black uppercase tracking-[0.25em] text-[#1A1A1A]/45 md:mt-4 md:text-base md:tracking-[0.35em]">
               THE ELEGANT SWAN RECALIBRATION
             </p>
-            <p className="mt-4 max-w-2xl text-sm leading-relaxed text-[#1A1A1A]/60 md:mt-6 md:text-base">
+            <p className="mx-auto mt-4 max-w-2xl text-sm leading-relaxed text-[#1A1A1A]/60 md:mt-6 md:text-base">
               为圆肩、驼背、天鹅颈建立一个温暖、清晰、可持续的自律系统。
               从收藏链接开始，把零散灵感沉淀为每天可执行的每日天鹅体态舒展练习。
             </p>
-            <div className="mt-6 flex flex-wrap gap-3 md:mt-9">
-              <button
-                type="button"
-                onClick={() => setIsPendingDrawerOpen(true)}
-                className="relative inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-[#FF4E50] to-[#F9D423] px-9 py-4 text-sm font-bold text-white shadow-[0_20px_45px_rgba(255,78,80,0.26),inset_0_1px_0_rgba(255,255,255,0.35)] transition-all hover:scale-[1.02] hover:from-[#F7B7C8] hover:to-[#F8D7A5] active:scale-[0.98]"
-              >
-                <Inbox className="h-4 w-4" strokeWidth={1.7} />
-                开启蜕变 📥 灵感收藏匣
-                <span className="absolute -right-1 -top-2 flex h-6 min-w-6 items-center justify-center rounded-full bg-[#F14C4C] px-2 text-[11px] font-black text-white shadow-[0_8px_20px_rgba(255,78,80,0.26)] ring-2 ring-white/80">
-                  {pendingLinks.length}
-                </span>
-              </button>
-            </div>
-          </div>
-
-          <div className="relative mx-auto hidden w-full max-w-xl md:block">
-            <img
-              src="https://images.unsplash.com/photo-1518611012118-696072aa579a?auto=format&fit=crop&w=1200&q=85"
-              alt="Modern posture training"
-              className="aspect-[4/5] w-full rounded-[32px] object-cover shadow-[0_30px_90px_rgba(53,104,143,0.18)]"
-            />
-            <div className="absolute -right-3 bottom-10 max-w-[310px] rounded-[26px] border border-white/70 bg-white/80 p-5 shadow-[0_20px_60px_rgba(255,78,80,0.16)] backdrop-blur-xl">
-              <div className="mb-3 inline-flex items-center gap-2 rounded-full bg-[#DDFBEA] px-3 py-1 text-[10px] font-black uppercase tracking-[0.16em] text-[#117A4A]">
-                <CheckCircle2 className="h-3.5 w-3.5" />
-                Swan glow +1
-              </div>
-              <p className="text-sm font-bold leading-relaxed text-[#1A1A1A]">
-                今天圆肩舒展练习完成！感觉肩膀松开了。
-              </p>
+            <div className="mt-6 md:mt-8">
+              <SurpriseMeCard practices={visiblePractices} onCheckIn={checkIn} />
             </div>
           </div>
         </div>
@@ -471,7 +453,6 @@ export default function App() {
           <div className="rounded-[28px] border border-[#EAE5DF]/50 bg-white p-4 shadow-sm md:rounded-[32px] md:p-8">
             <ActiveGallery
               practices={filteredPractices}
-              allPractices={visiblePractices}
               comments={comments}
               activeFilter={activeFilter}
               onFilterChange={setActiveFilter}
@@ -482,7 +463,6 @@ export default function App() {
               onGalleryScopeChange={setGalleryScope}
               isLoggedIn={isLoggedIn}
               onRequireLogin={() => setShowAuthModal(true)}
-              onSharePractice={sharePractice}
             />
           </div>
 
@@ -497,6 +477,41 @@ export default function App() {
           </div>
         </div>
       </div>
+      <section className="mx-auto max-w-[1500px] px-4 pb-8 md:px-8 lg:px-10">
+        <div className="rounded-[32px] border border-[#EAE5DF]/50 bg-white/75 p-4 shadow-sm backdrop-blur md:p-6">
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div>
+              <p className="font-sans text-[10px] font-black uppercase tracking-[0.24em] text-[#1A1A1A]/35">
+                Swan Co-Creation Toolbox
+              </p>
+              <h2 className="mt-2 font-sans text-xl font-black tracking-tight text-[#1A1A1A]">
+                白天鹅共建工具箱
+              </h2>
+            </div>
+            <div className="grid grid-cols-2 gap-3 md:flex">
+              <button
+                type="button"
+                onClick={() => setIsPendingDrawerOpen(true)}
+                className="relative inline-flex items-center justify-center gap-2 rounded-full border border-[#EAE5DF]/70 bg-white px-4 py-3 text-xs font-black text-[#1A1A1A] shadow-sm transition-all hover:scale-[1.02] active:scale-[0.98] md:px-6"
+              >
+                <Inbox className="h-4 w-4" strokeWidth={1.7} />
+                灵感收藏匣
+                <span className="absolute -right-1 -top-2 flex h-5 min-w-5 items-center justify-center rounded-full bg-[#F14C4C] px-1.5 text-[10px] font-black text-white ring-2 ring-white">
+                  {pendingLinks.length}
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={openShareStudio}
+                className="inline-flex items-center justify-center gap-2 rounded-full bg-[#1A1A1A] px-4 py-3 text-xs font-black text-white shadow-[0_14px_35px_rgba(26,26,26,0.14)] transition-all hover:scale-[1.02] active:scale-[0.98] md:px-6"
+              >
+                <Plus className="h-4 w-4" strokeWidth={1.7} />
+                分享我的天鹅秘籍
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
       <footer className="mt-10 rounded-t-[40px] bg-[#1A1A1A] px-8 py-10 text-white md:px-12">
         <div className="mx-auto flex max-w-[1500px] flex-col gap-4 md:flex-row md:items-end md:justify-between">
           <div>
@@ -571,6 +586,12 @@ export default function App() {
           </div>
         </div>
       )}
+      {isShareOpen && (
+        <SharePracticeModal
+          onClose={() => setIsShareOpen(false)}
+          onSubmit={sharePractice}
+        />
+      )}
       {isPendingDrawerOpen && (
         <div className="fixed inset-0 z-40 bg-[#1A1A1A]/25 backdrop-blur-sm" onClick={() => setIsPendingDrawerOpen(false)}>
           <aside
@@ -600,8 +621,8 @@ export default function App() {
             <PendingPool
               pendingLinks={pendingLinks}
               onQuickSave={addPendingLink}
-              onProcess={(practice, pendingId) => {
-                processPractice(practice, pendingId)
+              onProcess={(practice, pendingId, imageFile) => {
+                processPractice(practice, pendingId, imageFile)
                 setIsPendingDrawerOpen(false)
               }}
               isLoggedIn={isLoggedIn}
