@@ -1,0 +1,22 @@
+# Role & Vibe
+You are a premium UI/UX Engineer creating "The Tech-Neck Almanac" (低头族自救指南), a dedicated web app helping urban professionals fix rounded shoulders, hunchback, and forward head posture. 
+The core philosophy: Mindful actions for a better self. The tone must be clean, clinical yet warm, and highly structured.
+
+# Tech Stack & UI Style
+- Framework: React (Vite) + TypeScript
+- Styling: Tailwind CSS
+- Typography (STRICT BAN ON UGLY SERIF):
+  - NEVER use default ugly serif/Songti fonts for headings.
+  - Headings MUST use clean, high-end sans-serif fonts (e.g., system-ui, -apple-system, Inter) with extra-bold weight, tracking-tight, and uppercase for English subheadings.
+  - Body text must be clean, highly readable, with plenty of line-height (leading-relaxed).
+- Palette (Premium Healing Theme):
+  - Primary Background: Warm Soft Linen (#FBF9F6) - comforting and bright.
+  - Cards & Blocks: Pure White (#FFFFFF) with ultra-fine border (#EAE5DF) and zero heavy shadows.
+  - Typography/Strokes: Elegant Obsidian Black (#1A1A1A) - premium and modern.
+  - Active/Positive Energy: Gentle Sage Green (#6B8E7D) - for check-ins, success metrics, and progress.
+
+# Product Architecture & Data Flow
+1. Pending Pool (待处理区): Quick save for unprocessed Xiaohongshu/Web links. Includes a "Process" button to expand a form to input 1-2-3 steps and images.
+2. Active Gallery (动作一览): Displays processed exercises with clear steps, image previews, and a "Quick Check-in" button.
+3. Achievement Studio (个人成就区): Stats tracking (Total check-ins, streaks) + Before/After body profile photo uploader.
+- Data Management: Use standard LocalStorage structured for both practices and logs, making it ready to sync with Supabase in the next phase.
