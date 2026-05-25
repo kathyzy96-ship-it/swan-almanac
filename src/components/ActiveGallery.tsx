@@ -1,8 +1,9 @@
-import { Dumbbell, ExternalLink, MessageCircle, Send, SlidersHorizontal, Sparkles, Target, Trash2 } from 'lucide-react'
+import { Dumbbell, ExternalLink, MessageCircle, Plus, Send, SlidersHorizontal, Sparkles, Target, Trash2, UploadCloud, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { EmptyState, SectionLabel, SymptomBadge } from './ui'
-import type { CategoryFilter, Practice, PracticeComment } from '../types'
+import type { CategoryFilter, GalleryScope, Practice, PracticeComment, Symptom } from '../types'
 import { SYMPTOM_LABELS } from '../types'
+import { generateId } from '../lib/storage'
 
 interface ActiveGalleryProps {
   practices: Practice[]
@@ -13,6 +14,11 @@ interface ActiveGalleryProps {
   onCheckIn: (practiceId: string) => void
   onAddComment: (practiceId: string, body: string) => void
   onDeletePractice: (practiceId: string) => void
+  galleryScope: GalleryScope
+  onGalleryScopeChange: (scope: GalleryScope) => void
+  isLoggedIn: boolean
+  onRequireLogin: () => void
+  onSharePractice: (practice: Practice, imageFile?: File) => void
 }
 
 const FILTER_OPTIONS: Array<{ value: CategoryFilter; label: string }> = [
@@ -28,6 +34,7 @@ interface PracticeCardProps {
   onCheckIn: (practiceId: string) => void
   onAddComment: (practiceId: string, body: string) => void
   onDeletePractice: (practiceId: string) => void
+  canDelete: boolean
 }
 
 type TimerStatus = 'idle' | 'running' | 'done'
@@ -177,7 +184,7 @@ function SurpriseMeCard({
   )
 }
 
-function PracticeCard({ practice, comments, onCheckIn, onAddComment, onDeletePractice }: PracticeCardProps) {
+function PracticeCard({ practice, comments, onCheckIn, onAddComment, onDeletePractice, canDelete }: PracticeCardProps) {
   const [animKey, setAnimKey] = useState(0)
   const [commentInput, setCommentInput] = useState('')
   const [isCommentsOpen, setIsCommentsOpen] = useState(false)
@@ -208,14 +215,16 @@ function PracticeCard({ practice, comments, onCheckIn, onAddComment, onDeletePra
                 <SymptomBadge key={symptom} label={SYMPTOM_LABELS[symptom]} />
               ))}
             </div>
-            <button
-              type="button"
-              onClick={handleDelete}
-              className="inline-flex items-center gap-1.5 rounded-full bg-[#FFF0EB] px-3 py-1.5 text-xs font-black text-[#D95745] shadow-sm transition-all hover:scale-[1.02] active:scale-[0.98]"
-            >
-              <Trash2 className="h-3.5 w-3.5" strokeWidth={1.8} />
-              删除
-            </button>
+            {canDelete && (
+              <button
+                type="button"
+                onClick={handleDelete}
+                className="inline-flex items-center gap-1.5 rounded-full bg-[#FFF0EB] px-3 py-1.5 text-xs font-black text-[#D95745] shadow-sm transition-all hover:scale-[1.02] active:scale-[0.98]"
+              >
+                <Trash2 className="h-3.5 w-3.5" strokeWidth={1.8} />
+                删除
+              </button>
+            )}
           </div>
           <div>
             <h3 className="font-sans text-2xl font-black tracking-tight text-[#1A1A1A]">
@@ -244,11 +253,13 @@ function PracticeCard({ practice, comments, onCheckIn, onAddComment, onDeletePra
         </div>
 
         {practice.imageUrl && (
-          <img
-            src={practice.imageUrl}
-            alt={practice.name}
-            className="h-full min-h-[220px] w-full rounded-[24px] border border-[#EAE5DF]/50 object-cover shadow-sm"
-          />
+          <div className="max-w-full overflow-hidden rounded-2xl border border-[#EAE5DF]/50 shadow-sm">
+            <img
+              src={practice.imageUrl}
+              alt={practice.name}
+              className="aspect-video h-auto w-full max-w-full rounded-2xl object-cover"
+            />
+          </div>
         )}
       </div>
 
@@ -336,6 +347,171 @@ function PracticeCard({ practice, comments, onCheckIn, onAddComment, onDeletePra
   )
 }
 
+function SharePracticeModal({
+  onClose,
+  onSubmit,
+}: {
+  onClose: () => void
+  onSubmit: (practice: Practice, imageFile?: File) => void
+}) {
+  const [name, setName] = useState('')
+  const [symptoms, setSymptoms] = useState<Symptom[]>(['rounded-shoulders'])
+  const [steps, setSteps] = useState(['', '', ''])
+  const [imageFile, setImageFile] = useState<File | undefined>()
+  const [previewUrl, setPreviewUrl] = useState('')
+  const [isPublic, setIsPublic] = useState(true)
+
+  const toggleSymptom = (symptom: Symptom) => {
+    setSymptoms((current) =>
+      current.includes(symptom) ? current.filter((item) => item !== symptom) : [...current, symptom],
+    )
+  }
+
+  const updateStep = (index: number, value: string) => {
+    setSteps((current) => current.map((step, stepIndex) => (stepIndex === index ? value : step)))
+  }
+
+  const handleFileChange = (file?: File) => {
+    if (!file) return
+    setImageFile(file)
+    setPreviewUrl(URL.createObjectURL(file))
+  }
+
+  const handleSubmit = () => {
+    const cleanedSteps = steps.map((step) => step.trim()).filter(Boolean)
+    if (!name.trim() || symptoms.length === 0 || cleanedSteps.length === 0) return
+
+    onSubmit(
+      {
+        id: generateId(),
+        sourceUrl: 'community://swan-secret',
+        name: name.trim(),
+        symptoms,
+        steps: cleanedSteps,
+        imageUrl: previewUrl,
+        checkInCount: 0,
+        createdAt: new Date().toISOString(),
+        isPublic,
+      },
+      imageFile,
+    )
+    onClose()
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-[#1A1A1A]/25 px-4 py-6 backdrop-blur-sm">
+      <div className="relative w-full max-w-2xl rounded-[32px] border border-white/70 bg-white/85 p-6 shadow-[0_30px_90px_rgba(26,26,26,0.18)] backdrop-blur-xl md:p-8">
+        <button
+          type="button"
+          onClick={onClose}
+          className="absolute right-5 top-5 rounded-full bg-white/80 p-2 text-[#1A1A1A]/55 transition-colors hover:text-[#1A1A1A]"
+          aria-label="关闭分享表单"
+        >
+          <X className="h-4 w-4" />
+        </button>
+        <div className="mb-6">
+          <div className="mb-3 inline-flex items-center gap-2 rounded-full bg-[#1A1A1A] px-4 py-2 text-xs font-black uppercase tracking-[0.18em] text-white">
+            <Plus className="h-3.5 w-3.5" />
+            Swan UGC Studio
+          </div>
+          <h3 className="font-sans text-3xl font-black tracking-tight text-[#1A1A1A]">分享我的天鹅秘籍</h3>
+          <p className="mt-2 text-sm leading-relaxed text-[#1A1A1A]/55">
+            把你的芭蕾级体态微操发布到精选社区大厅，让更多天鹅女孩一起练。
+          </p>
+        </div>
+
+        <div className="grid gap-5 md:grid-cols-[1fr_220px]">
+          <div className="space-y-4">
+            <input
+              type="text"
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              placeholder="动作名称，如：肩颈云朵舒展"
+              className="w-full rounded-full border border-[#EAE5DF]/60 bg-white/80 px-5 py-3 text-sm outline-none transition-colors focus:border-[#F7B7C8]"
+            />
+
+            <div className="flex flex-wrap gap-2">
+              {(Object.keys(SYMPTOM_LABELS) as Symptom[]).map((symptom) => (
+                <button
+                  key={symptom}
+                  type="button"
+                  onClick={() => toggleSymptom(symptom)}
+                  className={`rounded-full border px-4 py-2 text-xs font-bold transition-all ${
+                    symptoms.includes(symptom)
+                      ? 'border-[#FF8A5B]/40 bg-[#FFF0EB] text-[#F14C4C]'
+                      : 'border-[#EAE5DF]/60 bg-white text-[#1A1A1A]/55 hover:border-[#FF8A5B]/30'
+                  }`}
+                >
+                  {SYMPTOM_LABELS[symptom]}
+                </button>
+              ))}
+            </div>
+
+            <div className="space-y-2">
+              {steps.map((step, index) => (
+                <input
+                  key={index}
+                  type="text"
+                  value={step}
+                  onChange={(event) => updateStep(index, event.target.value)}
+                  placeholder={`步骤 ${index + 1}`}
+                  className="w-full rounded-2xl border border-[#EAE5DF]/60 bg-[#F8FAFC] px-4 py-3 text-sm outline-none transition-colors focus:border-[#FF8A5B]"
+                />
+              ))}
+              <button
+                type="button"
+                onClick={() => setSteps((current) => [...current, ''])}
+                className="rounded-full bg-[#F2F7FF] px-4 py-2 text-xs font-black text-[#35688F] transition-all hover:scale-[1.02]"
+              >
+                增加步骤 +
+              </button>
+            </div>
+
+            <label className="flex items-center gap-3 rounded-2xl bg-white/75 px-4 py-3 text-sm font-bold text-[#1A1A1A]/65 ring-1 ring-[#EAE5DF]/50">
+              <input
+                type="checkbox"
+                checked={isPublic}
+                onChange={(event) => setIsPublic(event.target.checked)}
+                className="h-4 w-4 accent-[#F14C4C]"
+              />
+              公开分享到大厅
+            </label>
+          </div>
+
+          <label className="group flex cursor-pointer flex-col overflow-hidden rounded-[28px] border border-white/70 bg-gradient-to-br from-white via-[#F8FAFC] to-[#EEF5F2] shadow-sm ring-1 ring-[#EAE5DF]/50">
+            <div className="relative aspect-video w-full overflow-hidden">
+              {previewUrl ? (
+                <img src={previewUrl} alt="秘籍预览" className="h-auto w-full max-w-full rounded-2xl object-cover" />
+              ) : (
+                <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
+                  <div className="flex h-14 w-14 items-center justify-center rounded-full border border-white/80 bg-white/80 text-[#1A1A1A] shadow-sm transition-all group-hover:scale-105">
+                    <UploadCloud className="h-5 w-5" strokeWidth={1.5} />
+                  </div>
+                  <p className="text-sm font-bold text-[#1A1A1A]">上传 GIF / 图片</p>
+                </div>
+              )}
+            </div>
+            <input
+              type="file"
+              accept="image/*,.gif"
+              className="hidden"
+              onChange={(event) => handleFileChange(event.target.files?.[0])}
+            />
+          </label>
+        </div>
+
+        <button
+          type="button"
+          onClick={handleSubmit}
+          className="mt-7 w-full rounded-full bg-gradient-to-r from-[#FF4E50] to-[#F9D423] py-3.5 text-sm font-bold text-white shadow-[0_18px_45px_rgba(255,78,80,0.24),inset_0_1px_0_rgba(255,255,255,0.35)] transition-all hover:scale-[1.02] hover:from-[#F7B7C8] hover:to-[#F8D7A5] active:scale-[0.98]"
+        >
+          发布到天鹅社区
+        </button>
+      </div>
+    </div>
+  )
+}
+
 export function ActiveGallery({
   practices,
   allPractices,
@@ -345,8 +521,30 @@ export function ActiveGallery({
   onCheckIn,
   onAddComment,
   onDeletePractice,
+  galleryScope,
+  onGalleryScopeChange,
+  isLoggedIn,
+  onRequireLogin,
+  onSharePractice,
 }: ActiveGalleryProps) {
   const filterLabel = activeFilter === 'all' ? '全部练功房' : SYMPTOM_LABELS[activeFilter]
+  const [isShareOpen, setIsShareOpen] = useState(false)
+
+  const handleScopeChange = (scope: GalleryScope) => {
+    if (scope === 'mine' && !isLoggedIn) {
+      onRequireLogin()
+      return
+    }
+    onGalleryScopeChange(scope)
+  }
+
+  const handleShareClick = () => {
+    if (!isLoggedIn) {
+      onRequireLogin()
+      return
+    }
+    setIsShareOpen(true)
+  }
 
   return (
     <section className="flex flex-col gap-8">
@@ -358,11 +556,41 @@ export function ActiveGallery({
             当前筛选：{filterLabel}。已提炼的舒展卡片，随时练习，持续雕刻优雅体态。
           </p>
         </div>
-        <div className="inline-flex flex-wrap items-center gap-1 rounded-full border border-[#EAE5DF]/50 bg-white/80 p-1.5 shadow-sm">
-          <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#F2F7FF] text-[#35688F] shadow-sm">
-            <SlidersHorizontal className="h-4 w-4" strokeWidth={1.7} />
-          </span>
-          {FILTER_OPTIONS.map((option) => (
+        <div className="flex flex-col gap-3">
+          <button
+            type="button"
+            onClick={handleShareClick}
+            className="self-start rounded-full bg-[#1A1A1A] px-5 py-2.5 text-xs font-black text-white shadow-[0_14px_35px_rgba(26,26,26,0.14)] transition-all hover:scale-[1.02] active:scale-[0.98] xl:self-end"
+          >
+            分享秘籍 ＋
+          </button>
+          <div className="inline-flex flex-wrap items-center gap-1 rounded-full border border-[#EAE5DF]/50 bg-white/80 p-1.5 shadow-sm">
+            {[
+              { value: 'community' as GalleryScope, label: '🩰 精选社区大厅' },
+              { value: 'mine' as GalleryScope, label: '🔒 我的专属练功房' },
+            ].map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => handleScopeChange(option.value)}
+                className={`rounded-full px-4 py-2 text-xs font-black transition-all ${
+                  galleryScope === option.value
+                    ? 'bg-[#1A1A1A] text-white shadow-[0_10px_24px_rgba(26,26,26,0.14)]'
+                    : 'text-[#1A1A1A]/55 hover:bg-[#F8FAFC] hover:text-[#1A1A1A]'
+                }`}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      </header>
+
+      <div className="inline-flex max-w-full flex-wrap items-center gap-1 rounded-full border border-[#EAE5DF]/50 bg-white/80 p-1.5 shadow-sm">
+        <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#F2F7FF] text-[#35688F] shadow-sm">
+          <SlidersHorizontal className="h-4 w-4" strokeWidth={1.7} />
+        </span>
+        {FILTER_OPTIONS.map((option) => (
             <button
               key={option.value}
               type="button"
@@ -375,9 +603,8 @@ export function ActiveGallery({
             >
               {option.label}
             </button>
-          ))}
-        </div>
-      </header>
+        ))}
+      </div>
 
       <SurpriseMeCard practices={allPractices} onCheckIn={onCheckIn} />
 
@@ -397,9 +624,16 @@ export function ActiveGallery({
               onCheckIn={onCheckIn}
               onAddComment={onAddComment}
               onDeletePractice={onDeletePractice}
+              canDelete={galleryScope === 'mine'}
             />
           ))}
         </div>
+      )}
+      {isShareOpen && (
+        <SharePracticeModal
+          onClose={() => setIsShareOpen(false)}
+          onSubmit={onSharePractice}
+        />
       )}
     </section>
   )

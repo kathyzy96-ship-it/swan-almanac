@@ -7,8 +7,13 @@ create table if not exists public.practices (
   steps text[] not null default '{}',
   image_url text,
   check_in_count integer not null default 0,
+  is_public boolean not null default true,
+  created_by uuid references auth.users(id) on delete set null,
   created_at timestamptz not null default now()
 );
+
+alter table public.practices add column if not exists is_public boolean not null default true;
+alter table public.practices add column if not exists created_by uuid references auth.users(id) on delete set null;
 
 create table if not exists public.checkin_logs (
   id text primary key,
@@ -47,6 +52,11 @@ create policy "Users can manage own practices"
   using (auth.uid() = user_id)
   with check (auth.uid() = user_id);
 
+create policy "Anyone can view public practices"
+  on public.practices
+  for select
+  using (is_public = true);
+
 create policy "Users can manage own checkin logs"
   on public.checkin_logs
   for all
@@ -64,3 +74,17 @@ create policy "Users can manage own body profile"
   for all
   using (auth.uid() = user_id)
   with check (auth.uid() = user_id);
+
+insert into storage.buckets (id, name, public)
+values ('action-images', 'action-images', true)
+on conflict (id) do update set public = true;
+
+create policy "Anyone can view action images"
+  on storage.objects
+  for select
+  using (bucket_id = 'action-images');
+
+create policy "Users can upload own action images"
+  on storage.objects
+  for insert
+  with check (bucket_id = 'action-images' and auth.uid()::text = (storage.foldername(name))[1]);

@@ -6,13 +6,15 @@ interface ImageUploaderProps {
   sublabel: string
   imageUrl?: string
   onImageChange: (dataUrl: string) => void
+  onFileChange?: (file: File) => void
 }
 
-export function ImageUploader({ label, sublabel, imageUrl, onImageChange }: ImageUploaderProps) {
+export function ImageUploader({ label, sublabel, imageUrl, onImageChange, onFileChange }: ImageUploaderProps) {
   const handleChange = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (!file) return
 
+    onFileChange?.(file)
     const reader = new FileReader()
     reader.onload = () => onImageChange(reader.result as string)
     reader.readAsDataURL(file)
@@ -35,7 +37,7 @@ export function ImageUploader({ label, sublabel, imageUrl, onImageChange }: Imag
           </div>
         )}
       </div>
-      <input type="file" accept="image/*" className="hidden" onChange={handleChange} />
+      <input type="file" accept="image/*,.gif" className="hidden" onChange={handleChange} />
     </label>
   )
 }

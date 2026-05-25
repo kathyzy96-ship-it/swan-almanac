@@ -12,6 +12,8 @@ type PracticeRow = {
   image_url: string | null
   check_in_count: number
   created_at: string
+  is_public: boolean
+  created_by: string | null
 }
 
 type CheckInRow = {
@@ -92,6 +94,31 @@ export async function loadCloudData(userId: string): Promise<Pick<AppData, 'prac
   }
 }
 
+export async function loadPublicPractices(): Promise<Practice[]> {
+  const { data, error } = await supabase
+    .from('practices')
+    .select('*')
+    .eq('is_public', true)
+    .order('created_at', { ascending: false })
+
+  if (error) throw error
+  return ((data ?? []) as PracticeRow[]).map(fromPracticeRow)
+}
+
+export async function uploadActionImage(userId: string, file: File): Promise<string> {
+  const extension = file.name.split('.').pop() || 'png'
+  const path = `${userId}/${crypto.randomUUID()}.${extension}`
+  const { error } = await supabase.storage.from('action-images').upload(path, file, {
+    cacheControl: '3600',
+    upsert: false,
+  })
+
+  if (error) throw error
+
+  const { data } = supabase.storage.from('action-images').getPublicUrl(path)
+  return data.publicUrl
+}
+
 export async function syncLocalDataToCloud(userId: string, data: AppData): Promise<void> {
   await Promise.all([
     upsertPractices(userId, data.practices),
@@ -162,6 +189,8 @@ function toPracticeRow(userId: string, practice: Practice): PracticeRow {
     image_url: practice.imageUrl ?? null,
     check_in_count: practice.checkInCount,
     created_at: practice.createdAt,
+    is_public: practice.isPublic ?? true,
+    created_by: practice.createdBy ?? userId,
   }
 }
 
@@ -175,6 +204,8 @@ function fromPracticeRow(row: PracticeRow): Practice {
     imageUrl: row.image_url ?? undefined,
     checkInCount: row.check_in_count,
     createdAt: row.created_at,
+    isPublic: row.is_public ?? true,
+    createdBy: row.created_by ?? row.user_id,
   }
 }
 

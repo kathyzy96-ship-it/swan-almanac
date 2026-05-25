@@ -8,7 +8,7 @@ import { generateId } from '../lib/storage'
 interface PendingPoolProps {
   pendingLinks: PendingLink[]
   onQuickSave: (url: string) => void
-  onProcess: (practice: Practice, pendingId: string) => void
+  onProcess: (practice: Practice, pendingId: string, imageFile?: File) => void
   isLoggedIn?: boolean
   onRequireLogin?: () => void
 }
@@ -18,8 +18,9 @@ const ALL_SYMPTOMS: Symptom[] = ['rounded-shoulders', 'hunchback', 'forward-head
 type ProcessForm = {
   name: string
   symptoms: Symptom[]
-  steps: [string, string, string]
+  steps: string[]
   imageUrl?: string
+  imageFile?: File
 }
 
 const emptyForm = (): ProcessForm => ({
@@ -72,7 +73,7 @@ export function PendingPool({
 
   const updateStep = (id: string, index: number, value: string) => {
     const form = forms[id] ?? emptyForm()
-    const steps = [...form.steps] as [string, string, string]
+    const steps = [...form.steps]
     steps[index] = value
     updateForm(id, { steps })
   }
@@ -89,12 +90,14 @@ export function PendingPool({
         sourceUrl: pending.url,
         name: form.name.trim(),
         symptoms: form.symptoms,
-        steps: form.steps.map((s) => s.trim()) as [string, string, string],
+        steps: form.steps.map((s) => s.trim()),
         imageUrl: form.imageUrl,
         checkInCount: 0,
         createdAt: new Date().toISOString(),
+        isPublic: true,
       },
       pending.id,
+      form.imageFile,
     )
 
     setExpandedId(null)
@@ -220,9 +223,10 @@ export function PendingPool({
                     <div className="mt-2 max-w-xs">
                       <ImageUploader
                         label="上传姿态图"
-                        sublabel="支持本地图片"
+                        sublabel="支持本地图片 / GIF"
                         imageUrl={forms[link.id]?.imageUrl}
                         onImageChange={(url) => updateForm(link.id, { imageUrl: url })}
+                        onFileChange={(file) => updateForm(link.id, { imageFile: file })}
                       />
                     </div>
                   </div>

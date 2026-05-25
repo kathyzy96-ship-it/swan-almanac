@@ -22,15 +22,18 @@ import {
   deletePracticeFromCloud,
   getCurrentUser,
   loadCloudData,
+  loadPublicPractices,
   signInAnonymouslyOrDemo,
   signInOrSignUp,
   signOutFromSupabase,
   syncLocalDataToCloud,
+  uploadActionImage,
   upsertBodyProfile,
   upsertCheckInLog,
   upsertComment,
   upsertPractice,
 } from './lib/supabaseSync'
+import type { GalleryScope } from './types'
 
 function todayKey(): string {
   return new Date().toISOString().slice(0, 10)
@@ -39,12 +42,14 @@ function todayKey(): string {
 export default function App() {
   const [pendingLinks, setPendingLinks] = useState<PendingLink[]>([])
   const [practices, setPractices] = useState<Practice[]>([])
+  const [communityPractices, setCommunityPractices] = useState<Practice[]>([])
   const [comments, setComments] = useState<Record<string, PracticeComment[]>>({})
   const [checkInLogs, setCheckInLogs] = useState<CheckInLog[]>([])
   const [deletedPracticeIds, setDeletedPracticeIds] = useState<string[]>([])
   const [bodyProfile, setBodyProfile] = useState<BodyProfile>({})
   const [statAnimKey, setStatAnimKey] = useState(0)
   const [activeFilter, setActiveFilter] = useState<CategoryFilter>('all')
+  const [galleryScope, setGalleryScope] = useState<GalleryScope>('community')
   const [user, setUser] = useState<User | null>(null)
   const [showAuthModal, setShowAuthModal] = useState(false)
   const [authEmail, setAuthEmail] = useState('demo@swan-almanac.local')
@@ -60,6 +65,7 @@ export default function App() {
       const preparedLocalData = applyAndPersistData(localData)
 
       try {
+        await refreshPublicHall(preparedLocalData.practices)
         const currentUser = await getCurrentUser()
         if (!currentUser) return
 
@@ -72,6 +78,15 @@ export default function App() {
 
     void boot()
   }, [])
+
+  async function refreshPublicHall(fallbackPractices = practices): Promise<void> {
+    try {
+      const publicPractices = await loadPublicPractices()
+      setCommunityPractices(publicPractices.length > 0 ? publicPractices : fallbackPractices.filter((practice) => practice.isPublic ?? true))
+    } catch {
+      setCommunityPractices(fallbackPractices.filter((practice) => practice.isPublic ?? true))
+    }
+  }
 
   function applyAndPersistData(data: AppData): AppData {
     const seededPractices = mergeSeedPractices(data.practices, data.deletedPracticeIds)
@@ -87,6 +102,7 @@ export default function App() {
 
     setPendingLinks(nextData.pendingLinks)
     setPractices(nextData.practices)
+    setCommunityPractices((current) => (current.length > 0 ? current : nextData.practices.filter((practice) => practice.isPublic ?? true)))
     setComments(nextData.comments)
     setCheckInLogs(nextData.checkInLogs)
     setDeletedPracticeIds(nextData.deletedPracticeIds)
@@ -123,18 +139,20 @@ export default function App() {
           ? cloudData.bodyProfile
           : localData.bodyProfile,
     })
+    await refreshPublicHall(cloudData.practices.length > 0 ? cloudData.practices : localData.practices)
     setSyncStatus('cloud')
   }
 
   const totalCheckIns = useMemo(() => computeTotalCheckIns(checkInLogs), [checkInLogs])
   const streak = useMemo(() => computeStreak(checkInLogs), [checkInLogs])
   const isLoggedIn = Boolean(user)
+  const visiblePractices = galleryScope === 'community' ? communityPractices : practices
   const filteredPractices = useMemo(
     () =>
       activeFilter === 'all'
-        ? practices
-        : practices.filter((practice) => practice.symptoms.includes(activeFilter)),
-    [activeFilter, practices],
+        ? visiblePractices
+        : visiblePractices.filter((practice) => practice.symptoms.includes(activeFilter)),
+    [activeFilter, visiblePractices],
   )
 
   const addPendingLink = (url: string) => {
@@ -150,14 +168,26 @@ export default function App() {
     savePendingLinks(next)
   }
 
-  const processPractice = async (practice: Practice, pendingId: string) => {
-    const nextPractices = [practice, ...practices]
+  const processPractice = async (practice: Practice, pendingId: string, imageFile?: File) => {
+    let nextPractice = { ...practice, createdBy: user?.id ?? practice.createdBy, isPublic: practice.isPublic ?? true }
+    if (user && imageFile) {
+      try {
+        nextPractice = { ...nextPractice, imageUrl: await uploadActionImage(user.id, imageFile) }
+      } catch (error) {
+        setAuthError(error instanceof Error ? error.message : '图片已本地预览，上传云端 Storage 失败。')
+      }
+    }
+
+    const nextPractices = [nextPractice, ...practices]
     const nextPending = pendingLinks.filter((link) => link.id !== pendingId)
     const nextComments = {
       ...comments,
-      [practice.id]: mergeDefaultComments(comments, [practice])[practice.id],
+      [nextPractice.id]: mergeDefaultComments(comments, [nextPractice])[nextPractice.id],
     }
     setPractices(nextPractices)
+    if (nextPractice.isPublic) {
+      setCommunityPractices((current) => [nextPractice, ...current.filter((item) => item.id !== nextPractice.id)])
+    }
     setPendingLinks(nextPending)
     setComments(nextComments)
     savePractices(nextPractices)
@@ -166,13 +196,14 @@ export default function App() {
 
     if (user) {
       try {
-        await upsertPractice(user.id, practice)
+        await upsertPractice(user.id, nextPractice)
         await syncLocalDataToCloud(user.id, {
           ...currentAppData(),
           practices: nextPractices,
           pendingLinks: nextPending,
           comments: nextComments,
         })
+        if (nextPractice.isPublic) await refreshPublicHall(nextPractices)
         setSyncStatus('cloud')
       } catch (error) {
         setSyncStatus('local')
@@ -193,8 +224,14 @@ export default function App() {
         ? { ...practice, checkInCount: practice.checkInCount + 1 }
         : practice,
     )
+    const nextCommunityPractices = communityPractices.map((practice) =>
+      practice.id === practiceId
+        ? { ...practice, checkInCount: practice.checkInCount + 1 }
+        : practice,
+    )
     const nextLogs = [...checkInLogs, newLog]
     setPractices(nextPractices)
+    setCommunityPractices(nextCommunityPractices)
     setCheckInLogs(nextLogs)
     setStatAnimKey((key) => key + 1)
     savePractices(nextPractices)
@@ -255,6 +292,7 @@ export default function App() {
 
     delete nextComments[practiceId]
     setPractices(nextPractices)
+    setCommunityPractices((current) => current.filter((practice) => practice.id !== practiceId))
     setCheckInLogs(nextLogs)
     setComments(nextComments)
     setDeletedPracticeIds(nextDeletedIds)
@@ -286,6 +324,33 @@ export default function App() {
         setSyncStatus('local')
         setAuthError(error instanceof Error ? error.message : '体态照片已保存在本地，云端同步失败。')
       }
+    }
+  }
+
+  const sharePractice = async (practice: Practice, imageFile?: File) => {
+    if (!user) {
+      setShowAuthModal(true)
+      return
+    }
+
+    setSyncStatus('syncing')
+    try {
+      const imageUrl = imageFile ? await uploadActionImage(user.id, imageFile) : practice.imageUrl
+      const nextPractice = {
+        ...practice,
+        imageUrl,
+        createdBy: user.id,
+      }
+      const nextPractices = [nextPractice, ...practices.filter((item) => item.id !== nextPractice.id)]
+      setPractices(nextPractices)
+      savePractices(nextPractices)
+      await upsertPractice(user.id, nextPractice)
+      await refreshPublicHall(nextPractices)
+      setGalleryScope(nextPractice.isPublic ? 'community' : 'mine')
+      setSyncStatus('cloud')
+    } catch (error) {
+      setSyncStatus('local')
+      setAuthError(error instanceof Error ? error.message : '秘籍已保存在本地前失败，请检查 Storage 或数据库设置。')
     }
   }
 
@@ -336,8 +401,8 @@ export default function App() {
 
   return (
     <main className="min-h-screen bg-[#FBF9F6] text-[#1A1A1A]">
-      <header className="relative rounded-b-[40px] bg-gradient-to-b from-[#E2EDF8] via-[#F5F8FC] to-[#FBF9F6] px-8 py-16">
-        <div className="absolute right-8 top-7 flex items-center gap-3">
+      <header className="relative rounded-b-[32px] bg-gradient-to-b from-[#E2EDF8] via-[#F5F8FC] to-[#FBF9F6] px-5 pb-8 pt-14 md:rounded-b-[40px] md:px-8 md:py-16">
+        <div className="absolute right-5 top-5 flex items-center gap-3 md:right-8 md:top-7">
           {user && (
             <span className="rounded-full bg-white/70 px-3 py-1 text-[11px] font-black uppercase tracking-[0.16em] text-[#1A1A1A]/40">
               {syncStatus === 'syncing' ? 'Syncing' : syncStatus === 'cloud' ? 'Cloud' : 'Local'}
@@ -351,23 +416,23 @@ export default function App() {
             {user ? 'Logout' : 'Login / Register'}
           </button>
         </div>
-        <div className="mx-auto grid max-w-[1500px] items-center gap-12 lg:grid-cols-[1fr_0.9fr]">
+        <div className="mx-auto grid max-w-[1500px] items-center gap-8 md:gap-12 lg:grid-cols-[1fr_0.9fr]">
           <div className="max-w-3xl">
-            <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-white/70 bg-white/70 px-4 py-2 text-xs font-black uppercase tracking-[0.2em] text-[#35688F] shadow-sm backdrop-blur">
+            <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-white/70 bg-white/70 px-4 py-2 text-[10px] font-black uppercase tracking-[0.2em] text-[#35688F] shadow-sm backdrop-blur md:mb-5 md:text-xs">
                 <Leaf className="h-3.5 w-3.5" strokeWidth={1.5} />
                 Mindful actions for a better self
             </div>
-            <h1 className="font-sans text-5xl font-black tracking-tight text-[#1A1A1A] md:text-7xl">
+            <h1 className="font-sans text-3xl font-black tracking-tight text-[#1A1A1A] md:text-7xl">
               天鹅体态美学指南
             </h1>
-            <p className="mt-4 font-sans text-sm font-black uppercase tracking-[0.35em] text-[#1A1A1A]/45 md:text-base">
+            <p className="mt-3 font-sans text-xs font-black uppercase tracking-[0.25em] text-[#1A1A1A]/45 md:mt-4 md:text-base md:tracking-[0.35em]">
               THE ELEGANT SWAN RECALIBRATION
             </p>
-            <p className="mt-6 max-w-2xl text-base leading-relaxed text-[#1A1A1A]/60">
+            <p className="mt-4 max-w-2xl text-sm leading-relaxed text-[#1A1A1A]/60 md:mt-6 md:text-base">
               为圆肩、驼背、天鹅颈建立一个温暖、清晰、可持续的自律系统。
               从收藏链接开始，把零散灵感沉淀为每天可执行的每日天鹅体态舒展练习。
             </p>
-            <div className="mt-9 flex flex-wrap gap-3">
+            <div className="mt-6 flex flex-wrap gap-3 md:mt-9">
               <button
                 type="button"
                 onClick={() => setIsPendingDrawerOpen(true)}
@@ -382,7 +447,7 @@ export default function App() {
             </div>
           </div>
 
-          <div className="relative mx-auto w-full max-w-xl">
+          <div className="relative mx-auto hidden w-full max-w-xl md:block">
             <img
               src="https://images.unsplash.com/photo-1518611012118-696072aa579a?auto=format&fit=crop&w=1200&q=85"
               alt="Modern posture training"
@@ -401,22 +466,27 @@ export default function App() {
         </div>
       </header>
 
-      <div className="mx-auto max-w-[1500px] px-5 py-10 md:px-8 lg:px-10">
+      <div className="mx-auto max-w-[1500px] px-4 py-5 md:px-8 md:py-10 lg:px-10">
         <div id="workspace" className="grid gap-6 xl:grid-cols-[2fr_1fr]">
-          <div className="rounded-[32px] border border-[#EAE5DF]/50 bg-white p-8 shadow-sm">
+          <div className="rounded-[28px] border border-[#EAE5DF]/50 bg-white p-4 shadow-sm md:rounded-[32px] md:p-8">
             <ActiveGallery
               practices={filteredPractices}
-              allPractices={practices}
+              allPractices={visiblePractices}
               comments={comments}
               activeFilter={activeFilter}
               onFilterChange={setActiveFilter}
               onCheckIn={checkIn}
               onAddComment={addComment}
               onDeletePractice={deletePractice}
+              galleryScope={galleryScope}
+              onGalleryScopeChange={setGalleryScope}
+              isLoggedIn={isLoggedIn}
+              onRequireLogin={() => setShowAuthModal(true)}
+              onSharePractice={sharePractice}
             />
           </div>
 
-          <div className="rounded-[32px] border border-[#EAE5DF]/50 bg-white p-8 shadow-sm">
+          <div className="rounded-[28px] border border-[#EAE5DF]/50 bg-white p-4 shadow-sm md:rounded-[32px] md:p-8">
             <AchievementStudio
               totalCheckIns={totalCheckIns}
               streak={streak}

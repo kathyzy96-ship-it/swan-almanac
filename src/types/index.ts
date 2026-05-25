@@ -1,5 +1,6 @@
 export type Symptom = 'rounded-shoulders' | 'hunchback' | 'forward-head'
 export type CategoryFilter = Symptom | 'all'
+export type GalleryScope = 'community' | 'mine'
 
 export interface PendingLink {
   id: string
@@ -12,10 +13,12 @@ export interface Practice {
   sourceUrl: string
   name: string
   symptoms: Symptom[]
-  steps: [string, string, string]
+  steps: string[]
   imageUrl?: string
   checkInCount: number
   createdAt: string
+  isPublic?: boolean
+  createdBy?: string
 }
 
 export interface PracticeComment {
